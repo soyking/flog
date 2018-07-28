@@ -14,7 +14,7 @@ type Logger struct {
 	sync.Mutex
 	loggers map[string]*Logger
 
-	output io.Writer
+	output io.Writer // TODO: output lock
 	level  Level
 }
 
