@@ -1,72 +1,82 @@
 package flog
 
-import "io"
+import (
+	"io"
+	"os"
+	"sync"
+)
+
+const (
+	AllLoggers = ""
+)
 
 type Logger struct {
-	writer io.Writer
-	level  uint32
+	sync.Mutex
+	loggers map[string]*Logger
+
+	output io.Writer
+	level  Level
 }
 
-func (l *Logger) Debug(...interface{}) {
-	panic("implement me")
+func (l *Logger) SetOutput(output io.Writer) {
+	l.output = output
+	l.SetLoggerOutput(AllLoggers, output)
 }
 
-func (l *Logger) Debugln(...interface{}) {
-	panic("implement me")
+func (l *Logger) SetLevel(level Level) {
+	l.level = level
+	l.SetLoggerLevel(AllLoggers, level)
 }
 
-func (l *Logger) Debugf(string, ...interface{}) {
-	panic("implement me")
+func (l *Logger) GetLogger(name string) *Logger {
+	l.Lock()
+	defer l.Unlock()
+
+	if name == AllLoggers {
+		panic("invalid logger name")
+	}
+
+	if logger, ok := l.loggers[name]; ok {
+		return logger
+	} else {
+		logger := NewLogger()
+		logger.SetOutput(l.output)
+		logger.SetLevel(l.level)
+		l.loggers[name] = logger
+		return logger
+	}
 }
 
-func (l *Logger) Info(...interface{}) {
-	panic("implement me")
+func (l *Logger) SetLoggerOutput(name string, output io.Writer) {
+	l.Lock()
+	defer l.Unlock()
+
+	if name == AllLoggers {
+		for _, logger := range l.loggers {
+			logger.SetOutput(output)
+		}
+	} else if logger, ok := l.loggers[name]; ok {
+		logger.SetOutput(output)
+	}
 }
 
-func (l *Logger) Infoln(...interface{}) {
-	panic("implement me")
+func (l *Logger) SetLoggerLevel(name string, level Level) {
+	l.Lock()
+	defer l.Unlock()
+
+	if name == AllLoggers {
+		for _, logger := range l.loggers {
+			logger.SetLevel(level)
+		}
+	} else if logger, ok := l.loggers[name]; ok {
+		logger.SetLevel(level)
+	}
 }
 
-func (l *Logger) Infof(string, ...interface{}) {
-	panic("implement me")
-}
-
-func (l *Logger) Warn(...interface{}) {
-	panic("implement me")
-}
-
-func (l *Logger) Warnln(...interface{}) {
-	panic("implement me")
-}
-
-func (l *Logger) Warnf(string, ...interface{}) {
-	panic("implement me")
-}
-
-func (l *Logger) Error(...interface{}) {
-	panic("implement me")
-}
-
-func (l *Logger) Errorln(...interface{}) {
-	panic("implement me")
-}
-
-func (l *Logger) Errorf(string, ...interface{}) {
-	panic("implement me")
-}
-
-func (l *Logger) Fatal(...interface{}) {
-	panic("implement me")
-}
-
-func (l *Logger) Fatalln(...interface{}) {
-	panic("implement me")
-}
-
-func (l *Logger) Fatalf(string, ...interface{}) {
-	panic("implement me")
-}
-
-func NewLogger()*Logger {
-	return &Logger{}
+func NewLogger() *Logger {
+	return &Logger{
+		loggers: make(map[string]*Logger),
+		output:  os.Stdout,
+		level:   InfoLevel,
+	}
 }
