@@ -14,7 +14,7 @@ type Logger struct {
 	sync.Mutex
 	loggers map[string]*Logger
 
-	output io.Writer // TODO: output lock
+	output io.Writer
 	level  Level
 }
 
@@ -76,7 +76,7 @@ func (l *Logger) SetLoggerLevel(name string, level Level) {
 func NewLogger() *Logger {
 	return &Logger{
 		loggers: make(map[string]*Logger),
-		output:  os.Stdout,
+		output:  NewLockOutput(os.Stdout),
 		level:   InfoLevel,
 	}
 }

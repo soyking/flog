@@ -8,6 +8,7 @@ import (
 
 func TestSubLogger(t *testing.T) {
 	l := NewLogger()
+	l.SetOutput(os.Stdout)
 	logger1 := l.GetLogger("1")
 	logger2 := l.GetLogger("2")
 
