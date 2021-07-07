@@ -1,82 +1,91 @@
 package flog
 
 import (
-	"io"
-	"os"
+	"strings"
 	"sync"
+
+	"github.com/sirupsen/logrus"
 )
 
 const (
-	AllLoggers = ""
+	AllLoggers     = "__all__loggers__"
+	NameSeparators = "."
 )
 
 type Logger struct {
-	sync.Mutex
-	loggers map[string]*Logger
+	*logrus.Logger
+	name string
 
-	output io.Writer
-	level  Level
-}
-
-func (l *Logger) SetOutput(output io.Writer) {
-	l.output = output
-	l.SetLoggerOutput(AllLoggers, output)
-}
-
-func (l *Logger) SetLevel(level Level) {
-	l.level = level
-	l.SetLoggerLevel(AllLoggers, level)
+	lock     sync.Mutex
+	children map[string]*Logger
 }
 
 func (l *Logger) GetLogger(name string) *Logger {
-	l.Lock()
-	defer l.Unlock()
+	l.lock.Lock()
+	defer l.lock.Unlock()
 
 	if name == AllLoggers {
 		panic("invalid logger name")
 	}
 
-	if logger, ok := l.loggers[name]; ok {
-		return logger
+	if child, ok := l.children[name]; ok {
+		return child
 	} else {
-		logger := NewLogger()
-		logger.SetOutput(l.output)
-		logger.SetLevel(l.level)
-		l.loggers[name] = logger
-		return logger
-	}
-}
+		fullname := strings.Join([]string{l.name, name}, NameSeparators)
+		child := NewLogger(fullname)
+		// copy features from parent logger
+		child.SetOutput(l.Out)
+		child.SetFormatter(l.Formatter)
+		child.SetReportCaller(l.ReportCaller)
+		child.SetLevel(l.Level)
+		child.ExitFunc = l.ExitFunc
 
-func (l *Logger) SetLoggerOutput(name string, output io.Writer) {
-	l.Lock()
-	defer l.Unlock()
-
-	if name == AllLoggers {
-		for _, logger := range l.loggers {
-			logger.SetOutput(output)
+		// hack for hooks
+		hooksMap := make(map[logrus.Hook]struct{})
+		for _, hooks := range l.Hooks {
+			for _, hook := range hooks {
+				if _, ok := hooksMap[hook]; !ok {
+					if _, ok := hook.(*NameHook); !ok {
+						child.AddHook(hook)
+					}
+					hooksMap[hook] = struct{}{}
+				}
+			}
 		}
-	} else if logger, ok := l.loggers[name]; ok {
-		logger.SetOutput(output)
+		child.AddHook(NewNameHook(fullname))
+
+		l.children[name] = child
+		return child
 	}
 }
 
-func (l *Logger) SetLoggerLevel(name string, level Level) {
-	l.Lock()
-	defer l.Unlock()
-
-	if name == AllLoggers {
-		for _, logger := range l.loggers {
-			logger.SetLevel(level)
+// Use Setup to update Logger and its children's features
+func (l *Logger) Setup(setup func(*Logger), names ...string) {
+	if len(names) == 1 && names[0] == AllLoggers {
+		l.lock.Lock()
+		defer l.lock.Unlock()
+		setup(l)
+		for _, child := range l.children {
+			child.Setup(setup, AllLoggers)
 		}
-	} else if logger, ok := l.loggers[name]; ok {
-		logger.SetLevel(level)
+	} else {
+		child := l
+		for _, name := range names {
+			child = child.GetLogger(name)
+		}
+
+		l.lock.Lock()
+		defer l.lock.Unlock()
+		setup(child)
 	}
 }
 
-func NewLogger() *Logger {
+func NewLogger(name string) *Logger {
+	l := logrus.New()
+	l.AddHook(NewNameHook(name))
 	return &Logger{
-		loggers: make(map[string]*Logger),
-		output:  NewLockOutput(os.Stdout),
-		level:   InfoLevel,
+		Logger:   l,
+		name:     name,
+		children: make(map[string]*Logger),
 	}
 }

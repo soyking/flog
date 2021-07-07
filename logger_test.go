@@ -2,91 +2,59 @@ package flog
 
 import (
 	"bytes"
-	"os"
+	"strings"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
 
-func TestSubLogger(t *testing.T) {
-	l := NewLogger()
-	l.SetOutput(os.Stdout)
-	logger1 := l.GetLogger("1")
-	logger2 := l.GetLogger("2")
+func TestLogger(t *testing.T) {
+	tLog := NewLogger("tLog")
 
-	l.SetLoggerLevel("1", FatalLevel)
-	if logger1.level != FatalLevel || logger2.level != InfoLevel {
-		t.Fatal("level err")
-	}
-	l.SetLevel(DebugLevel)
-	if logger1.level != DebugLevel || logger2.level != DebugLevel {
-		t.Fatal("level err")
+	out := bytes.NewBuffer(nil)
+	assertOut := func(f func(outS string) bool) {
+		outS := out.String()
+		out.Reset()
+		t.Logf("out log: %s", outS)
+		if !f(outS) {
+			t.Fatal("check failed")
+		}
 	}
 
-	l.SetLoggerOutput("1", os.Stderr)
-	if logger1.output != os.Stderr || logger2.output != os.Stdout {
-		t.Fatal("output err")
-	}
-	l.SetOutput(os.Stdin)
-	if logger1.output != os.Stdin || logger2.output != os.Stdin {
-		t.Fatal("output err")
-	}
-}
+	tLog.Setup(func(l *Logger) {
+		l.SetOutput(out)
+		l.SetLevel(logrus.ErrorLevel)
+	})
+	tLog.Error("log in global")
+	assertOut(func(outS string) bool { return strings.Contains(outS, "log in global") })
 
-func TestLevel(t *testing.T) {
-	l := NewLogger()
-	output := bytes.NewBuffer(nil)
-	l.SetOutput(output)
+	module1Log := tLog.GetLogger("module1")
+	// inherit log level from parent
+	module1Log.Info("log in module1")
+	assertOut(func(outS string) bool { return outS == "" })
+	module1Log.Error("log in module1")
+	assertOut(func(outS string) bool {
+		return strings.Contains(outS, "log in module1") && strings.Contains(outS, "logger_name=tLog.module1")
+	})
+	// change log level from parent
+	tLog.Setup(func(l *Logger) {
+		l.SetLevel(logrus.InfoLevel)
+	}, "module1")
+	module1Log.Info("log in module1")
+	assertOut(func(outS string) bool { return strings.Contains(outS, "log in module1") })
+	module1Log.Debug("log in module1")
+	assertOut(func(outS string) bool { return outS == "" })
+	// change own log level
+	module1Log.Setup(func(l *Logger) { l.SetLevel(logrus.DebugLevel) })
+	module1Log.Debug("log in module1")
+	assertOut(func(outS string) bool { return strings.Contains(outS, "log in module1") })
 
-	l.Debug("Debug")
-	if output.Len() > 0 {
-		t.Fatal("should not output")
-	}
-	l.Info("Info")
-	if output.Len() == 0 {
-		t.Fatal("should output")
-	} else {
-		t.Log(output.String())
-	}
-
-	l.SetLevel(ErrorLevel)
-	output.Reset()
-	l.Info("Info")
-	if output.Len() > 0 {
-		t.Fatal("should not output")
-	}
-	l.Error("Error")
-	if output.Len() == 0 {
-		t.Fatal("should output")
-	} else {
-		t.Log(output.String())
-	}
-}
-
-func TestLoggerLevel(t *testing.T) {
-	l := NewLogger()
-	logger1 := l.GetLogger("1")
-
-	l.SetLevel(ErrorLevel)
-	l.SetLoggerLevel("1", InfoLevel)
-
-	output := bytes.NewBuffer(nil)
-	l.SetOutput(output)
-
-	l.Info("Info")
-	if output.Len() > 0 {
-		t.Fatal("should not output")
-	}
-	l.Error("Error")
-	if output.Len() == 0 {
-		t.Fatal("should output")
-	} else {
-		t.Log(output.String())
-	}
-
-	output.Reset()
-	logger1.Info("Info")
-	if output.Len() == 0 {
-		t.Fatal("should output")
-	} else {
-		t.Log(output.String())
-	}
+	// change all loggers
+	tLog.Setup(func(l *Logger) {
+		l.SetLevel(logrus.PanicLevel)
+	}, AllLoggers)
+	tLog.Error("log in global")
+	assertOut(func(outS string) bool { return outS == "" })
+	module1Log.Debug("log in module1")
+	assertOut(func(outS string) bool { return outS == "" })
 }
