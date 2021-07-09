@@ -24,6 +24,10 @@ func (l *Logger) GetLogger(name string) *Logger {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
+	return l.getLogger(name)
+}
+
+func (l *Logger) getLogger(name string) *Logger {
 	if name == AllLoggers {
 		panic("invalid logger name")
 	}
@@ -61,9 +65,10 @@ func (l *Logger) GetLogger(name string) *Logger {
 
 // Use Setup to update Logger and its children's features
 func (l *Logger) Setup(setup func(*Logger), names ...string) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
 	if len(names) == 1 && names[0] == AllLoggers {
-		l.lock.Lock()
-		defer l.lock.Unlock()
 		setup(l)
 		for _, child := range l.children {
 			child.Setup(setup, AllLoggers)
@@ -71,11 +76,8 @@ func (l *Logger) Setup(setup func(*Logger), names ...string) {
 	} else {
 		child := l
 		for _, name := range names {
-			child = child.GetLogger(name)
+			child = child.getLogger(name)
 		}
-
-		l.lock.Lock()
-		defer l.lock.Unlock()
 		setup(child)
 	}
 }
